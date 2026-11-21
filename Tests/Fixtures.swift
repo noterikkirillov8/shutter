@@ -53,6 +53,23 @@ import Foundation
     shelf.show(now: 20, autoHide: 8)
     check("timer restarts when icons are shown again", shelf.needsAutoHideTimer(autoHide: 8))
 
+    var rescued = Shelf(hidden: true)
+    rescued.rescue()
+    check("rescue shows icons with no countdown and no timer", !rescued.hidden && rescued.deadline == nil && !rescued.needsAutoHideTimer(autoHide: 8))
+    check("rescued icons never auto-hide again", !rescued.tick(now: 0, autoHide: 8, busy: false) && !rescued.tick(now: 100, autoHide: 8, busy: false) && !rescued.hidden)
+    rescued.resumeAutoHide()
+    check("a layout change resumes auto-hide", rescued.needsAutoHideTimer(autoHide: 8))
+    rescued.rescue(); rescued.hide()
+    rescued.show(now: 50, autoHide: 8)
+    check("hiding by hand resumes auto-hide", rescued.deadline == 58 && rescued.needsAutoHideTimer(autoHide: 8))
+
+    var start = StartHide()
+    check("start hide: hides as soon as the layout allows", start.step(hidden: false, canHide: true) == .hide)
+    check("start hide: stops once hidden", start.step(hidden: true, canHide: false) == .done)
+    start = StartHide()
+    let steps = (0..<6).map { _ in start.step(hidden: false, canHide: false) }
+    check("start hide: four retries 2 s apart, then gives up", steps == Array(repeating: .retry(after: 2), count: 4) + [.done, .done] && StartHide.firstDelay == 1)
+
     // Safety
     check("can hide when divider is left of the icon", Safety.canHide(dividerMinX: 1000, iconMinX: 1020))
     check("cannot hide when divider is right of the icon", !Safety.canHide(dividerMinX: 1030, iconMinX: 1020))
@@ -82,6 +99,10 @@ import Foundation
     prefs.autoHide = 999
     prefs.save(store)
     check("auto-hide is clamped to 60", Prefs.read(store).autoHide == 60)
+    store.set(Data(#"{"hideOnStart":true,"tipSeen":true,"autoHide":"x"}"#.utf8), forKey: Prefs.key)
+    check("a blob missing or damaged in some keys keeps the rest", Prefs.read(store) == Prefs(autoHide: 8, hideOnStart: true, tipSeen: true, showOnHover: true))
+    store.set(Data(#"{"showOnHover":false}"#.utf8), forKey: Prefs.key)
+    check("a blob missing the older keys keeps showOnHover", Prefs.read(store) == Prefs(autoHide: 8, hideOnStart: false, tipSeen: false, showOnHover: false))
     store.set(Data([255]), forKey: Prefs.key)
     check("damaged preferences recover", Prefs.read(store) == Prefs())
     print("\(count) fixture checks passed")

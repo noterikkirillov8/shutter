@@ -22,12 +22,28 @@ struct Prefs: Codable, Equatable {
 }
 
 extension Prefs {
+  /// Each key is read on its own, so an older or partly damaged blob keeps what it can and defaults only the rest.
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
-    autoHide = try values.decode(Int.self, forKey: .autoHide)
-    hideOnStart = try values.decode(Bool.self, forKey: .hideOnStart)
-    tipSeen = try values.decode(Bool.self, forKey: .tipSeen)
-    showOnHover = try values.decodeIfPresent(Bool.self, forKey: .showOnHover) ?? true
+    let defaults = Prefs()
+    autoHide = (try? values.decode(Int.self, forKey: .autoHide)) ?? defaults.autoHide
+    hideOnStart = (try? values.decode(Bool.self, forKey: .hideOnStart)) ?? defaults.hideOnStart
+    tipSeen = (try? values.decode(Bool.self, forKey: .tipSeen)) ?? defaults.tipSeen
+    showOnHover = (try? values.decode(Bool.self, forKey: .showOnHover)) ?? defaults.showOnHover
+  }
+}
+
+/// Hide-on-start: at login macOS may not have laid the menu bar out yet, so a refused hide is retried a few times.
+struct StartHide {
+  enum Step: Equatable { case done, hide, retry(after: TimeInterval) }
+  static let firstDelay: TimeInterval = 1, retryDelay: TimeInterval = 2
+  private(set) var retries = 4
+  mutating func step(hidden: Bool, canHide: Bool) -> Step {
+    if hidden { return .done }
+    if canHide { return .hide }
+    guard retries > 0 else { return .done }
+    retries -= 1
+    return .retry(after: Self.retryDelay)
   }
 }
 
@@ -35,12 +51,21 @@ extension Prefs {
 struct Shelf: Equatable {
   private(set) var hidden: Bool
   private(set) var deadline: TimeInterval?
+  /// Set when the safety net had to show everything: auto-hide stays off until a hand-made hide or a layout change.
+  private(set) var autoHidePaused = false
   init(hidden: Bool = false) { self.hidden = hidden }
 
   mutating func needsAutoHideTimer(autoHide: Int) -> Bool {
-    guard autoHide > 0 else { deadline = nil; return false }
+    guard autoHide > 0, !autoHidePaused else { deadline = nil; return false }
     return !hidden
   }
+  /// The safety net showed everything again: no countdown, so the icons do not flicker back and forth.
+  mutating func rescue() {
+    hidden = false
+    deadline = nil
+    autoHidePaused = true
+  }
+  mutating func resumeAutoHide() { autoHidePaused = false }
 
   mutating func show(now: TimeInterval, autoHide: Int) {
     hidden = false
@@ -55,6 +80,7 @@ struct Shelf: Equatable {
     deadline = nil
     guard allowed else { return false }
     hidden = true
+    autoHidePaused = false
     return true
   }
   mutating func toggle(now: TimeInterval, autoHide: Int) {
@@ -64,7 +90,7 @@ struct Shelf: Equatable {
   /// Returns true when it just hid.
   mutating func tick(now: TimeInterval, autoHide: Int, busy: Bool, canHide: Bool = true) -> Bool {
     guard !hidden else { return false }
-    guard autoHide > 0 else { deadline = nil; return false }
+    guard autoHide > 0, !autoHidePaused else { deadline = nil; return false }
     guard let due = deadline else { deadline = now + Double(autoHide); return false }
     if busy { deadline = now + Double(autoHide); return false }
     guard now >= due else { return false }

@@ -45,14 +45,29 @@ import SwiftUI
     model.hotKeyChanged = { [weak self] in self?.registerHotKey() }
     registerHotKey()
 
+    NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.shelf.resumeAutoHide(); self?.updateTimer() }
+    }
     model.autoHideChanged = { [weak self] in self?.updateTimer() }
     updateTimer()
 
     if !model.prefs.tipSeen {
       openTip()
     } else if model.prefs.startsHidden {
-      // Give macOS a moment to lay the items out before checking positions.
-      DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.hide() }
+      hideAtStart(StartHide(), after: StartHide.firstDelay)
+    }
+  }
+
+  /// At login macOS can take a while to lay the items out; until it has, hiding is refused, so try again a few times.
+  private func hideAtStart(_ start: StartHide, after delay: TimeInterval) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+      guard let self else { return }
+      var start = start
+      switch start.step(hidden: shelf.hidden, canHide: canHide) {
+      case .hide: hide()
+      case .retry(let after): hideAtStart(start, after: after)
+      case .done: break
+      }
     }
   }
 
@@ -87,6 +102,7 @@ import SwiftUI
   private func apply() {
     divider.length = shelf.hidden ? Safety.hiddenLength : NSStatusItem.variableLength
     divider.button?.image = shelf.hidden ? nil : lineImage
+    icon.button?.toolTip = shelf.hidden ? "Shutter: click to show hidden icons" : "Shutter: click to hide icons"
   }
 
   private func show() {
@@ -115,7 +131,10 @@ import SwiftUI
     // Safety net: if Shutter's own icon ended up off screen, undo at once.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
       guard let self, shelf.hidden else { return }
-      if !Safety.iconVisible(icon.button?.window?.frame, screens: NSScreen.screens.map(\.frame)) { show() }
+      if !Safety.iconVisible(icon.button?.window?.frame, screens: NSScreen.screens.map(\.frame)) {
+        shelf.rescue()                      // no auto-hide until the user hides by hand or the screens change
+        updateTimer(); apply()
+      }
     }
   }
 
@@ -165,7 +184,12 @@ import SwiftUI
     if event?.type == .rightMouseUp || event?.modifierFlags.contains(.option) == true {
       let menu = NSMenu()
       menu.delegate = self
-      menu.addItem(withTitle: shelf.hidden ? "Show Icons" : "Hide Icons", action: #selector(menuToggle), keyEquivalent: "").target = self
+      let toggleItem = menu.addItem(withTitle: shelf.hidden ? "Show Icons" : "Hide Icons", action: #selector(menuToggle), keyEquivalent: "")
+      toggleItem.target = self
+      if let key = model.hotKey, let letter = key.display.last, letter.isLetter || letter.isNumber {   // show the shortcut in the menu
+        toggleItem.keyEquivalent = String(letter).lowercased()
+        toggleItem.keyEquivalentModifierMask = NSEvent.ModifierFlags(rawValue: key.modifiers)
+      }
       menu.addItem(.separator())
       menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
       menu.addItem(.separator())
