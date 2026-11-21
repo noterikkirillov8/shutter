@@ -1,0 +1,13 @@
+.DS_Store
+build/
+DerivedData/
+xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+.claude/
+dist/
+CLAUDE.md
+AGENTS.md
+qa/*
+!qa/polish/
+topics.txt

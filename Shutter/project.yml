@@ -1,0 +1,44 @@
+name: Shutter
+options:
+  deploymentTarget: {macOS: '15.0'}
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    OTHER_SWIFT_FLAGS: '-strict-concurrency=complete'
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Manual
+  configs:
+    Debug: {CODE_SIGNING_ALLOWED: NO, CODE_SIGNING_REQUIRED: NO}
+    Release:
+      CODE_SIGN_IDENTITY: Erik Local Signing
+      DEAD_CODE_STRIPPING: YES
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+      DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+      STRIP_INSTALLED_PRODUCT: YES
+      CODE_SIGN_ENTITLEMENTS: Resources/Shutter.entitlements
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+targets:
+  Shutter:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+      - {path: Resources/Sounds, type: folder, buildPhase: resources}
+      - {path: Resources/AppIcon.icns, buildPhase: resources}
+    info:
+      path: Resources/Info.plist
+      properties:
+        LSUIElement: true
+        NSHighResolutionCapable: true
+        CFBundleIconFile: AppIcon
+        CFBundleShortVersionString: '1.0.0'
+        CFBundleVersion: '1'
+    settings:
+      base: {PRODUCT_BUNDLE_IDENTIFIER: com.erikkirillov.Shutter, ENABLE_APP_SANDBOX: NO}
+schemes:
+  Shutter:
+    build: {targets: {Shutter: all}}
+    run: {config: Debug}
+    archive: {config: Release}
